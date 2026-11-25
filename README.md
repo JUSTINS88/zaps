@@ -2,14 +2,20 @@
 
 A minimal URL shortener built with Go, PostgreSQL, and `sqlc` — usable from both the terminal (CLI) and a lightweight embedded web UI.
 
-Live demo: [s.justinsep.me](https://s.justinsep.me)
+Live demo: [zaps.my.id](https://zaps.my.id)
 
 ## Features
 - Shorten URLs with custom or auto-generated 6-character slugs
-- Thread-safe in-memory redirect cache (`sync.RWMutex`)
-- CLI client with automatic local machine key (`~/.zaps.json`)
-- Embedded web UI (`go:embed`) bundled inside a single server binary
-- PostgreSQL persistence with `sqlc` type-safe queries
+- Destination preview page before leaving `zaps.my.id` so visitors can inspect the target URL
+- Public link stats page (`/stats`) to view total clicks and link metadata
+- Terminal CLI (`zaps`) with zero-login local machine key (`~/.zaps.json`), terminal QR code (`-q`), and PNG export (`-S`)
+- URL (`http`/`https` only) and slug validation to prevent invalid redirects and reserved-path conflicts
+
+## Tech Stack
+- **Backend:** Go (`net/http`, `html/template`, `go:embed` single-binary web UI)
+- **Database:** PostgreSQL, `sqlc`, `goose` migrations, bounded connection pooling
+- **Performance:** Thread-safe in-memory lookup cache (`sync.RWMutex`) & async click tracking
+- **CLI:** `pflag`, `skip2/go-qrcode`
 
 ## Install CLI
 ```bash
@@ -17,21 +23,13 @@ go install github.com/JUSTINS88/zaps/cmd/zaps@latest
 ```
 
 ## Project Structure
-- `cmd/zapsd` — HTTP server (`POST /api/links`, `GET /{slug}`, `GET /stats`, `GET /`)
+- `cmd/zapsd` — HTTP server (`POST /api/links`, `GET /api/links/{slug}/stats`, `GET /{slug}`, `GET /stats`, `GET /`)
 - `cmd/zaps` — CLI client
-- `internal/web` — Embedded frontend (`index.html`, `stats.html`, `zaps-mark.svg`)
+- `internal/web` — Embedded frontend (`index.html`, `stats.html`, `preview.html`, `zaps-mark.svg`)
 - `internal/store` — `sqlc` generated database layer
-- `db/` — SQL migrations and queries
-- `deploy/` — Dockerfile and Docker Compose config
+- `db/` — SQL migrations (`goose`) and queries
 
 ## Running Locally
-
-### With Docker Compose
-```bash
-docker compose -f deploy/docker-compose.yml up --build
-```
-
-### Manual
 1. Start PostgreSQL and run migrations in `db/migrations/`.
 2. Copy `.env.example` to `.env` and set `DB_URL`.
 3. Run the server:
@@ -41,10 +39,12 @@ docker compose -f deploy/docker-compose.yml up --build
 4. Use the CLI:
    ```bash
    zaps https://example.com -s my-slug
+   zaps https://example.com -q        # print QR code in terminal
+   zaps https://example.com -q -S     # print QR code and save <slug>.png
    ```
 
 ## API
-- `POST /api/links` — Create a short link
+- `POST /api/links` — Create a short link (`400` on invalid URL/slug, `409` if slug is taken or reserved)
   ```json
   {
     "original_link": "https://example.com",
@@ -52,11 +52,12 @@ docker compose -f deploy/docker-compose.yml up --build
     "machine_key": "your-key"
   }
   ```
-- `GET /{slug}` — Redirect to the original URL
+- `GET /api/links/{slug}/stats` — Get click count and link metadata (`404` if not found)
+- `GET /{slug}` — Render destination preview page and track clicks
 
 ## Benchmark (Local)
 
-Tested locally against PostgreSQL using [`hey`](https://github.com/rakyll/hey):
+Tested locally against PostgreSQL on the direct `302 Found` redirect handler using [`hey`](https://github.com/rakyll/hey):
 
 ```bash
 hey -n 1000 -c 50 -disable-redirects http://localhost:8080/<slug>
