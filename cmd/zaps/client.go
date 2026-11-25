@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 )
 
-func sendLinkToCreateLink(originalLink, slug string) error {
+func sendLinkToCreateLink(originalLink, slug string) (string, error) {
 	machineKey, err := GetMachineKey()
 	if err != nil {
-		return fmt.Errorf("Machine Key cannot be generated: %v", err)
+		return "", fmt.Errorf("Machine Key cannot be generated: %v", err)
 	}
 
 	link, err := json.Marshal(struct {
@@ -29,7 +29,7 @@ func sendLinkToCreateLink(originalLink, slug string) error {
 	apiURL := "https://zaps.my.id/api/links"
 	res, err := http.Post(apiURL, "application/json", bytes.NewBuffer(link))
 	if err != nil {
-		return fmt.Errorf("Failed Connect to server")
+		return "", fmt.Errorf("Failed Connect to server")
 	}
 
 	defer res.Body.Close()
@@ -40,9 +40,9 @@ func sendLinkToCreateLink(originalLink, slug string) error {
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(res.Body).Decode(&errResp); err == nil && errResp.Error != "" {
-			return fmt.Errorf("server error (%d): %s", res.StatusCode, errResp.Error)
+			return "", fmt.Errorf("server error (%d): %s", res.StatusCode, errResp.Error)
 		}
-		return fmt.Errorf("server returned status %d", res.StatusCode)
+		return "", fmt.Errorf("server returned status %d", res.StatusCode)
 	}
 
 	// Show in terminal
@@ -50,11 +50,10 @@ func sendLinkToCreateLink(originalLink, slug string) error {
 		ShortURL string `json:"short_url"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return fmt.Errorf("Failed To Decode JSON")
+		return "", fmt.Errorf("Failed To Decode JSON")
 	}
 
-	fmt.Printf("This is your shorten link: %s\n", result.ShortURL)
-	return nil
+	return result.ShortURL, nil
 }
 
 func GetMachineKey() (string, error) {
